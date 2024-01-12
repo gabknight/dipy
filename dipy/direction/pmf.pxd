@@ -5,7 +5,6 @@ cdef class PmfGen:
         double[:] pmf
         double[:, :, :, :] data
         double[:, :] vertices
-        object sphere
 
     cpdef double[:] get_pmf(self, double[::1] point)
     cdef double* get_pmf_c(self, double* point) noexcept nogil
