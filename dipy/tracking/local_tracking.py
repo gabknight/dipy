@@ -44,6 +44,7 @@ class LocalTracking:
         affine,
         step_size,
         *,
+        particle_direction_getter=None,
         max_cross=None,
         maxlen=500,
         minlen=2,
@@ -108,6 +109,7 @@ class LocalTracking:
         """
 
         self.direction_getter = direction_getter
+        self.particle_direction_getter = particle_direction_getter
         self.stopping_criterion = stopping_criterion
         self.seeds = seeds
         self.unidirectional = unidirectional
@@ -280,6 +282,7 @@ class ParticleFilteringTracking(LocalTracking):
         affine,
         step_size,
         *,
+        particle_direction_getter,
         max_cross=None,
         maxlen=500,
         minlen=2,
@@ -304,6 +307,8 @@ class ParticleFilteringTracking(LocalTracking):
         ----------
         direction_getter : instance of ProbabilisticDirectionGetter
             Used to get directions for fiber tracking.
+        particle_direction_getter : instance of ProbabilisticDirectionGetter
+            Used to get directions for particle tracking.
         stopping_criterion : instance of AnatomicalStoppingCriterion
             Identifies endpoints and invalid points to inform tracking.
         seeds : array (N, 3)
@@ -370,7 +375,7 @@ class ParticleFilteringTracking(LocalTracking):
         ----------
         .. footbibliography::
         """
-
+	
         if not isinstance(stopping_criterion, AnatomicalStoppingCriterion):
             raise ValueError("expecting AnatomicalStoppingCriterion")
 
@@ -410,6 +415,7 @@ class ParticleFilteringTracking(LocalTracking):
         )
         super(ParticleFilteringTracking, self).__init__(
             direction_getter=direction_getter,
+            particle_direction_getter=particle_direction_getter,
             stopping_criterion=stopping_criterion,
             seeds=seeds,
             affine=affine,
@@ -429,6 +435,7 @@ class ParticleFilteringTracking(LocalTracking):
     def _tracker(self, seed, first_step, streamline):
         return pft_tracker(
             self.direction_getter,
+            self.particle_direction_getter,
             self.stopping_criterion,
             seed,
             first_step,

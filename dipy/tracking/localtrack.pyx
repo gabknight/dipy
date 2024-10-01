@@ -78,6 +78,7 @@ def local_tracker(
 
 def pft_tracker(
         DirectionGetter dg,
+        DirectionGetter dg_p,
         AnatomicalStoppingCriterion sc,
         cnp.float_t[:] seed_pos,
         cnp.float_t[:] first_step,
@@ -104,6 +105,8 @@ def pft_tracker(
     ----------
     dg : DirectionGetter
         Used to choosing tracking directions.
+    dg_p : DirectionGetter
+        Used to choosing particle tracking directions.
     sc : AnatomicalStoppingCriterion
         Used to check the streamline status (e.g. endpoint) along path.
     seed_pos : array, float, 1d, (3,)
@@ -154,6 +157,7 @@ def pft_tracker(
         Ending state of the streamlines as determined by the StoppingCriterion.
 
     """
+  
     cdef:
         cnp.npy_intp i
         StreamlineStatus stream_status
@@ -169,7 +173,7 @@ def pft_tracker(
     copy_point(&voxel_size[0], input_voxel_size)
     copy_point(&seed_pos[0], input_seed_pos)
 
-    i = _pft_tracker(dg, sc, input_seed_pos, input_direction, input_voxel_size,
+    i = _pft_tracker(dg, dg_p, sc, input_seed_pos, input_direction, input_voxel_size,
                      streamline, directions, step_size, &stream_status,
                      pft_max_nbr_back_steps, pft_max_nbr_front_steps,
                      pft_max_trials, particle_count, particle_paths,
@@ -182,6 +186,7 @@ def pft_tracker(
 @cython.wraparound(False)
 @cython.cdivision(True)
 cdef _pft_tracker(DirectionGetter dg,
+                  DirectionGetter dg_p,
                   AnatomicalStoppingCriterion sc,
                   double* seed,
                   double[::1] direction,
@@ -249,7 +254,7 @@ cdef _pft_tracker(DirectionGetter dg,
                 front_steps = min(strl_array_len - i - back_steps - 1,
                                   pft_max_nbr_front_steps)
                 front_steps = max(0, front_steps)
-                i = _pft(streamline, i - back_steps, directions, dg, sc,
+                i = _pft(streamline, i - back_steps, directions, dg, dg_p, sc,
                          voxel_size, step_size, stream_status,
                          back_steps + front_steps, particle_count,
                          particle_paths, particle_dirs, particle_weights,
@@ -293,6 +298,7 @@ cdef _pft(cnp.float_t[:, :] streamline,
           int streamline_i,
           cnp.float_t[:, :] directions,
           DirectionGetter dg,
+          DirectionGetter dg_p,
           AnatomicalStoppingCriterion sc,
           double* voxel_size,
           double step_size,
@@ -331,7 +337,7 @@ cdef _pft(cnp.float_t[:, :] streamline,
             copy_point(&particle_paths[0, p, s, 0], point)
             copy_point(&particle_dirs[0, p, s, 0], dir)
 
-            if dg.get_direction_c(point, dir):
+            if dg_p.get_direction_c(point, dir):
                 particle_stream_statuses[0, p] = INVALIDPOINT
                 particle_weights[p] = 0
             else:
