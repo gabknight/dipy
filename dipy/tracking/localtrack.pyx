@@ -220,14 +220,20 @@ cdef _pft_tracker(DirectionGetter dg,
     #copy_point(&direction[0], &directions[0, 0])
     copy_point(&direction[0], direction_calc)
     
+    
     copy_point(&voxel_size[0], input_voxel_size)
 
     stream_status[0] = TRACKPOINT
     pft_trial = 0
     max_wm_pve = 0
     i = 1
+    i_sub = 2
     strl_array_len = streamline.shape[0]
     while i < strl_array_len:
+        # If in the previous generate_streamline function at least one new point isn’t obtained, the loop breaks.
+        if i_sub<2:
+            # print(stream_status[0])
+            break
         # Update the point and prev_point variables and get the direction of the last step
         stream_status_1 = stream_status[0]
         if i>1:
@@ -240,8 +246,10 @@ cdef _pft_tracker(DirectionGetter dg,
         # Update streamline with generate_streamline
         i_sub, stream_status_1 = dg.generate_streamline(point, direction_calc, input_voxel_size, step_size, sc, sub_streamline, stream_status_1, True)
         stream_status[0] = stream_status_1
-        if i_sub<2:
-            break
+        # print(stream_status[0])
+        # if stream_status[0] == TRACKPOINT:
+            # The tracking continues normally
+            # print("Se sale con status TRACKPOINT", i_sub)
         #if dg.get_direction_c(point, direction):
             # no valid diffusion direction to follow
             #stream_status[0] = INVALIDPOINT
@@ -253,9 +261,9 @@ cdef _pft_tracker(DirectionGetter dg,
             #copy_point(point, &streamline[i, 0])
             #copy_point(&direction[0], &directions[i, 0])
             
-        i += i_sub-1   # Alonso y Jesus dicen que es -1 
+        i += i_sub-1  
         copy_point(&streamline[i-1,0], point)
-        stream_status[0] = sc.check_point_c(point)
+        # stream_status[0] = sc.check_point_c(point)
 
         current_wm_pve = 1.0 - sc.get_include(point) - sc.get_exclude(point)
         if current_wm_pve > max_wm_pve:
@@ -263,6 +271,7 @@ cdef _pft_tracker(DirectionGetter dg,
 
         if stream_status[0] == TRACKPOINT:
             # The tracking continues normally
+            # print("Se sale con status TRACKPOINT", i_sub)
             continue
         elif (stream_status[0] == ENDPOINT
               and max_wm_pve < min_wm_pve_before_stopping

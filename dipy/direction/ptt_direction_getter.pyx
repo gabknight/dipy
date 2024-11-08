@@ -449,6 +449,7 @@ cdef class PTTDirectionGetter(ProbabilisticDirectionGetter):
             for i in range(1, len_streamlines):
                 if self.propagate():
                     # the propagation failed
+                    stream_status = ENDPOINT
                     break
                 copy_point(<double *>&self.position[0], &streamline[i, 0])
                 stream_status = stopping_criterion\
