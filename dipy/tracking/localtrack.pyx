@@ -83,14 +83,14 @@ def pft_tracker(
         cnp.float_t[:] first_step,
         cnp.float_t[:] voxel_size,
         cnp.float_t[:, :] streamline,
-        cnp.float_t[:, :] directions,
+        # cnp.float_t[:, :] directions,
         double step_size,
         int pft_max_nbr_back_steps,
         int pft_max_nbr_front_steps,
         int pft_max_trials,
         int particle_count,
         cnp.float_t[:, :, :, :] particle_paths,
-        cnp.float_t[:, :, :, :] particle_dirs,
+        # cnp.float_t[:, :, :, :] particle_dirs,
         cnp.float_t[:] particle_weights,
         cnp.npy_intp[:, :]  particle_steps,
         cnp.npy_intp[:, :]  particle_stream_statuses,
@@ -170,10 +170,10 @@ def pft_tracker(
     copy_point(&seed_pos[0], input_seed_pos)
 
     i = _pft_tracker(dg, sc, input_seed_pos, input_direction, input_voxel_size,
-                     streamline, directions, step_size, &stream_status,
+                     streamline, step_size, &stream_status,
                      pft_max_nbr_back_steps, pft_max_nbr_front_steps,
                      pft_max_trials, particle_count, particle_paths,
-                     particle_dirs, particle_weights, particle_steps,
+                     particle_weights, particle_steps,
                      particle_stream_statuses, min_wm_pve_before_stopping)
     return i, stream_status
 
@@ -187,7 +187,7 @@ cdef _pft_tracker(DirectionGetter dg,
                   double[::1] direction,
                   double* voxel_size,
                   cnp.float_t[:, :] streamline,
-                  cnp.float_t[:, :] directions,
+                  # cnp.float_t[:, :] directions,
                   double step_size,
                   StreamlineStatus * stream_status,
                   int pft_max_nbr_back_steps,
@@ -195,7 +195,7 @@ cdef _pft_tracker(DirectionGetter dg,
                   int pft_max_trials,
                   int particle_count,
                   cnp.float_t[:, :, :, :] particle_paths,
-                  cnp.float_t[:, :, :, :] particle_dirs,
+                  # cnp.float_t[:, :, :, :] particle_dirs,
                   cnp.float_t[:] particle_weights,
                   cnp.npy_intp[:, :] particle_steps,
                   cnp.npy_intp[:, :] particle_stream_statuses,
@@ -284,10 +284,10 @@ cdef _pft_tracker(DirectionGetter dg,
                 front_steps = min(strl_array_len - i - back_steps - 1,
                                   pft_max_nbr_front_steps)
                 front_steps = max(0, front_steps)
-                i = _pft(streamline, i - back_steps, directions, dg, sc,
+                i = _pft(streamline, i - back_steps, dg, sc,
                          voxel_size, step_size, stream_status,
                          back_steps + front_steps, particle_count,
-                         particle_paths, particle_dirs, particle_weights,
+                         particle_paths, particle_weights,
                          particle_steps, particle_stream_statuses)
                 pft_trial += 1
                 # update the current point with the PFT results
@@ -326,7 +326,7 @@ cdef _pft_tracker(DirectionGetter dg,
 @cython.cdivision(True)
 cdef _pft(cnp.float_t[:, :] streamline,
           int streamline_i,
-          cnp.float_t[:, :] directions,
+          # cnp.float_t[:, :] directions,
           DirectionGetter dg,
           AnatomicalStoppingCriterion sc,
           double* voxel_size,
@@ -335,7 +335,7 @@ cdef _pft(cnp.float_t[:, :] streamline,
           int pft_nbr_steps,
           int particle_count,
           cnp.float_t[:, :, :, :] particle_paths,
-          cnp.float_t[:, :, :, :] particle_dirs,
+          # cnp.float_t[:, :, :, :] particle_dirs,
           cnp.float_t[:] particle_weights,
           cnp.npy_intp[:, :] particle_steps,
           cnp.npy_intp[:, :] particle_stream_statuses):
@@ -389,7 +389,7 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     point[j] += dir[j] / voxel_size[j] * step_size
 
                 copy_point(point, &particle_paths[0, p, s + 1, 0])
-                copy_point(dir, &particle_dirs[0, p, s + 1, 0])
+                # copy_point(dir, &particle_dirs[0, p, s + 1, 0])
                 particle_stream_statuses[0, p] = sc.check_point_c(point)
                 particle_steps[0, p] = s + 1
                 particle_weights[p] *= 1 - sc.get_exclude_c(point)
@@ -419,8 +419,8 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     for ss in range(pft_nbr_steps):
                         copy_point(&particle_paths[0, pp, ss, 0],
                                   &particle_paths[1, pp, ss, 0])
-                        copy_point(&particle_dirs[0, pp, ss, 0],
-                                  &particle_dirs[1, pp, ss, 0])
+                        # copy_point(&particle_dirs[0, pp, ss, 0],
+                                  # &particle_dirs[1, pp, ss, 0])
                     particle_stream_statuses[1, pp] = \
                             particle_stream_statuses[0, pp]
                     particle_steps[1, pp] = particle_steps[0, pp]
@@ -437,8 +437,8 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     for ss in range(pft_nbr_steps):
                         copy_point(&particle_paths[1, p_source, ss, 0],
                                   &particle_paths[0, pp, ss, 0])
-                        copy_point(&particle_dirs[1, p_source, ss, 0],
-                                  &particle_dirs[0, pp, ss, 0])
+                        # copy_point(&particle_dirs[1, p_source, ss, 0],
+                                  # &particle_dirs[0, pp, ss, 0])
                     particle_stream_statuses[0, pp] = \
                             particle_stream_statuses[1, p_source]
                     particle_steps[0, pp] = particle_steps[1, p_source]
