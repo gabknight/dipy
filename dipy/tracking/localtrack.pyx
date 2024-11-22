@@ -265,20 +265,22 @@ cdef _pft_tracker(DirectionGetter dg,
         copy_point(&streamline[i-1,0], point)
         # stream_status[0] = sc.check_point_c(point)
 
+        # update max_wm_pve
+        for j in range(i_sub):
+            pve_j = (1.0 - sc.get_include_c(&sub_streamline[j, 0]) - sc.get_exclude_c(&sub_streamline[j, 0]))
+            if pve_j > max_wm_pve:
+                max_wm_pve = pve_j
+
         current_wm_pve = 1.0 - sc.get_include(point) - sc.get_exclude(point)
         if current_wm_pve > max_wm_pve:
             max_wm_pve = current_wm_pve
 
-        if stream_status[0] == TRACKPOINT:
-            # The tracking continues normally
-            # print("Se sale con status TRACKPOINT", i_sub)
-            continue
-        elif (stream_status[0] == ENDPOINT
+        if (stream_status[0] == ENDPOINT
               and max_wm_pve < min_wm_pve_before_stopping
               and current_wm_pve > 0):
             # The tracking stopped before reaching the wm
             continue
-        elif stream_status[0] == INVALIDPOINT:
+        elif stream_status[0] == INVALIDPOINT or stream_status[0] == TRACKPOINT:
             if pft_trial < pft_max_trials and i > 1 and i < strl_array_len:
                 back_steps = min(i - 1, pft_max_nbr_back_steps)
                 front_steps = min(strl_array_len - i - back_steps - 1,
