@@ -1,7 +1,7 @@
-import multiprocessing as mp
-import tempfile
 from itertools import repeat
+import multiprocessing as mp
 from os import path
+import tempfile
 
 import numpy as np
 import scipy.optimize as opt
