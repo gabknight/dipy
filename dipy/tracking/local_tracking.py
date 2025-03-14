@@ -394,16 +394,16 @@ class ParticleFilteringTracking(LocalTracking):
             )
 
         self.min_wm_pve_before_stopping = min_wm_pve_before_stopping
-        self.directions = np.empty((maxlen + 1, 3), dtype=float)
+        # self.directions = np.empty((maxlen + 1, 3), dtype=float)
         self.pft_max_trial = pft_max_trial
         self.particle_count = particle_count
         self.particle_paths = np.empty(
             (2, self.particle_count, pft_max_steps + 1, 3), dtype=float
         )
         self.particle_weights = np.empty(self.particle_count, dtype=float)
-        self.particle_dirs = np.empty(
-            (2, self.particle_count, pft_max_steps + 1, 3), dtype=float
-        )
+        # self.particle_dirs = np.empty(
+            # (2, self.particle_count, pft_max_steps + 1, 3), dtype=float
+        # )
         self.particle_steps = np.empty((2, self.particle_count), dtype=np.intp)
         self.particle_stream_statuses = np.empty(
             (2, self.particle_count), dtype=np.intp
@@ -434,14 +434,14 @@ class ParticleFilteringTracking(LocalTracking):
             first_step,
             self._voxel_size,
             streamline,
-            self.directions,
+            # self.directions,
             self.step_size,
             self.pft_max_nbr_back_steps,
             self.pft_max_nbr_front_steps,
             self.pft_max_trial,
             self.particle_count,
             self.particle_paths,
-            self.particle_dirs,
+            # self.particle_dirs,
             self.particle_weights,
             self.particle_steps,
             self.particle_stream_statuses,
