@@ -83,14 +83,12 @@ def pft_tracker(
         cnp.float_t[:] first_step,
         cnp.float_t[:] voxel_size,
         cnp.float_t[:, :] streamline,
-        # cnp.float_t[:, :] directions,
         double step_size,
         int pft_max_nbr_back_steps,
         int pft_max_nbr_front_steps,
         int pft_max_trials,
         int particle_count,
         cnp.float_t[:, :, :, :] particle_paths,
-        # cnp.float_t[:, :, :, :] particle_dirs,
         cnp.float_t[:] particle_weights,
         cnp.npy_intp[:, :]  particle_steps,
         cnp.npy_intp[:, :]  particle_stream_statuses,
@@ -116,10 +114,6 @@ def pft_tracker(
     streamline : array, float, 2d, (N, 3)
         Output of tracking will be put into this array. The length of this
         array, ``N``, will set the maximum allowable length of the streamline.
-    directions : array, float, 2d, (N, 3)
-        Output of tracking directions will be put into this array. The length
-        of this array, ``N``, will set the maximum allowable length of the
-        streamline.
     step_size : float
         Size of tracking steps in mm if ``fixed_step``.
     pft_max_nbr_back_steps : int
@@ -134,8 +128,6 @@ def pft_tracker(
         Number of particles to use in the particle filter.
     particle_paths : array, float, 4d, (2, particle_count, pft_max_steps, 3)
         Temporary array for paths followed by all particles.
-    particle_dirs : array, float, 4d, (2, particle_count, pft_max_steps, 3)
-        Temporary array for directions followed by particles.
     particle_weights : array, float, 1d (particle_count)
         Temporary array for the weights of particles.
     particle_steps : array, float, (2, particle_count)
@@ -187,7 +179,6 @@ cdef _pft_tracker(DirectionGetter dg,
                   double[::1] direction,
                   double* voxel_size,
                   cnp.float_t[:, :] streamline,
-                  # cnp.float_t[:, :] directions,
                   double step_size,
                   StreamlineStatus * stream_status,
                   int pft_max_nbr_back_steps,
@@ -195,7 +186,6 @@ cdef _pft_tracker(DirectionGetter dg,
                   int pft_max_trials,
                   int particle_count,
                   cnp.float_t[:, :, :, :] particle_paths,
-                  # cnp.float_t[:, :, :, :] particle_dirs,
                   cnp.float_t[:] particle_weights,
                   cnp.npy_intp[:, :] particle_steps,
                   cnp.npy_intp[:, :] particle_stream_statuses,
@@ -217,7 +207,6 @@ cdef _pft_tracker(DirectionGetter dg,
 
     copy_point(seed, point)
     copy_point(seed, &streamline[0,0])
-    #copy_point(&direction[0], &directions[0, 0])
     copy_point(&direction[0], direction_calc)
     
     
@@ -232,7 +221,6 @@ cdef _pft_tracker(DirectionGetter dg,
     while i < strl_array_len:
         # If in the previous generate_streamline function at least one new point isn’t obtained, the loop breaks.
         if i_sub<2:
-            # print(stream_status[0])
             break
         # Update the point and prev_point variables and get the direction of the last step
         stream_status_1 = stream_status[0]
@@ -246,25 +234,8 @@ cdef _pft_tracker(DirectionGetter dg,
         # Update streamline with generate_streamline
         i_sub, stream_status_1 = dg.generate_streamline(point, direction_calc, input_voxel_size, step_size, sc, sub_streamline, stream_status_1, True)
         stream_status[0] = stream_status_1
-        # print(stream_status[0])
-        # if stream_status[0] == TRACKPOINT:
-            # The tracking continues normally
-            # print("Se sale con status TRACKPOINT", i_sub)
-        #if dg.get_direction_c(point, direction):
-            # no valid diffusion direction to follow
-            #stream_status[0] = INVALIDPOINT
-        #else:
-            #for j in range(3):
-                # step forward
-                #point[j] += direction[j] / voxel_size[j] * step_size
-
-            #copy_point(point, &streamline[i, 0])
-            #copy_point(&direction[0], &directions[i, 0])
-            
         i += i_sub-1  
         copy_point(&streamline[i-1,0], point)
-        # stream_status[0] = sc.check_point_c(point)
-
         # update max_wm_pve
         for j in range(i_sub):
             pve_j = (1.0 - sc.get_include_c(&sub_streamline[j, 0]) - sc.get_exclude_c(&sub_streamline[j, 0]))
@@ -328,7 +299,6 @@ cdef _pft_tracker(DirectionGetter dg,
 @cython.cdivision(True)
 cdef _pft(cnp.float_t[:, :] streamline,
           int streamline_i,
-          # cnp.float_t[:, :] directions,
           DirectionGetter dg,
           AnatomicalStoppingCriterion sc,
           double* voxel_size,
@@ -337,7 +307,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
           int pft_nbr_steps,
           int particle_count,
           cnp.float_t[:, :, :, :] particle_paths,
-          # cnp.float_t[:, :, :, :] particle_dirs,
           cnp.float_t[:] particle_weights,
           cnp.npy_intp[:, :] particle_steps,
           cnp.npy_intp[:, :] particle_stream_statuses):
@@ -371,11 +340,8 @@ cdef _pft(cnp.float_t[:, :] streamline,
             if particle_stream_statuses[0, p] != TRACKPOINT:
                 for j in range(3):
                     particle_paths[0, p, s, j] = 0
-                    # particle_dirs[0, p, s, j] = 0
                 continue  # move to the next particle
             copy_point(&particle_paths[0, p, s, 0], point)
-            # copy_point(&particle_dirs[0, p, s, 0], dir)
-            # Update the last direction
             if s>0:
                 copy_point(&particle_paths[0, p, s , 0], point)
                 copy_point(&particle_paths[0, p, s-1 , 0], prev_point)
@@ -391,7 +357,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     point[j] += dir[j] / voxel_size[j] * step_size
 
                 copy_point(point, &particle_paths[0, p, s + 1, 0])
-                # copy_point(dir, &particle_dirs[0, p, s + 1, 0])
                 particle_stream_statuses[0, p] = sc.check_point_c(point)
                 particle_steps[0, p] = s + 1
                 particle_weights[p] *= 1 - sc.get_exclude_c(point)
