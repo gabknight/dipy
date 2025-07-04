@@ -7,7 +7,7 @@ from dipy.tracking.direction_getter cimport DirectionGetter
 from dipy.tracking.stopping_criterion cimport(
     StreamlineStatus, StoppingCriterion, AnatomicalStoppingCriterion,
     TRACKPOINT, ENDPOINT, OUTSIDEIMAGE, INVALIDPOINT, PYERROR)
-from dipy.utils.fast_numpy cimport cumsum, where_to_insert, copy_point
+from dipy.utils.fast_numpy cimport cumsum, where_to_insert, copy_point, normalize
 
 
 def local_tracker(
@@ -83,14 +83,12 @@ def pft_tracker(
         cnp.float_t[:] first_step,
         cnp.float_t[:] voxel_size,
         cnp.float_t[:, :] streamline,
-        cnp.float_t[:, :] directions,
         double step_size,
         int pft_max_nbr_back_steps,
         int pft_max_nbr_front_steps,
         int pft_max_trials,
         int particle_count,
         cnp.float_t[:, :, :, :] particle_paths,
-        cnp.float_t[:, :, :, :] particle_dirs,
         cnp.float_t[:] particle_weights,
         cnp.npy_intp[:, :]  particle_steps,
         cnp.npy_intp[:, :]  particle_stream_statuses,
@@ -116,10 +114,6 @@ def pft_tracker(
     streamline : array, float, 2d, (N, 3)
         Output of tracking will be put into this array. The length of this
         array, ``N``, will set the maximum allowable length of the streamline.
-    directions : array, float, 2d, (N, 3)
-        Output of tracking directions will be put into this array. The length
-        of this array, ``N``, will set the maximum allowable length of the
-        streamline.
     step_size : float
         Size of tracking steps in mm if ``fixed_step``.
     pft_max_nbr_back_steps : int
@@ -134,8 +128,6 @@ def pft_tracker(
         Number of particles to use in the particle filter.
     particle_paths : array, float, 4d, (2, particle_count, pft_max_steps, 3)
         Temporary array for paths followed by all particles.
-    particle_dirs : array, float, 4d, (2, particle_count, pft_max_steps, 3)
-        Temporary array for directions followed by particles.
     particle_weights : array, float, 1d (particle_count)
         Temporary array for the weights of particles.
     particle_steps : array, float, (2, particle_count)
@@ -170,10 +162,10 @@ def pft_tracker(
     copy_point(&seed_pos[0], input_seed_pos)
 
     i = _pft_tracker(dg, sc, input_seed_pos, input_direction, input_voxel_size,
-                     streamline, directions, step_size, &stream_status,
+                     streamline, step_size, &stream_status,
                      pft_max_nbr_back_steps, pft_max_nbr_front_steps,
                      pft_max_trials, particle_count, particle_paths,
-                     particle_dirs, particle_weights, particle_steps,
+                     particle_weights, particle_steps,
                      particle_stream_statuses, min_wm_pve_before_stopping)
     return i, stream_status
 
@@ -187,7 +179,6 @@ cdef _pft_tracker(DirectionGetter dg,
                   double[::1] direction,
                   double* voxel_size,
                   cnp.float_t[:, :] streamline,
-                  cnp.float_t[:, :] directions,
                   double step_size,
                   StreamlineStatus * stream_status,
                   int pft_max_nbr_back_steps,
@@ -195,69 +186,82 @@ cdef _pft_tracker(DirectionGetter dg,
                   int pft_max_trials,
                   int particle_count,
                   cnp.float_t[:, :, :, :] particle_paths,
-                  cnp.float_t[:, :, :, :] particle_dirs,
                   cnp.float_t[:] particle_weights,
                   cnp.npy_intp[:, :] particle_steps,
                   cnp.npy_intp[:, :] particle_stream_statuses,
                   double min_wm_pve_before_stopping):
     cdef:
-        cnp.npy_intp i, j
+        cnp.npy_intp i, j, i_sub
         int pft_trial, back_steps, front_steps
         int strl_array_len
         double max_wm_pve, current_wm_pve
         double point[3]
         void (*step)(double* , double*, double) noexcept nogil
 
+        double prev_point[3]
+        double direction_calc[3]
+        double input_voxel_size[3]
+        cnp.float_t[:, :] sub_streamline
+        StreamlineStatus stream_status_1
+
     copy_point(seed, point)
     copy_point(seed, &streamline[0,0])
-    copy_point(&direction[0], &directions[0, 0])
-
+    copy_point(&direction[0], direction_calc)
+    copy_point(&voxel_size[0], input_voxel_size)
     stream_status[0] = TRACKPOINT
     pft_trial = 0
     max_wm_pve = 0
     i = 1
+    i_sub = 2
     strl_array_len = streamline.shape[0]
     while i < strl_array_len:
-        if dg.get_direction_c(point, direction):
-            # no valid diffusion direction to follow
-            stream_status[0] = INVALIDPOINT
-        else:
+        # If in the previous generate_streamline function at least one new point isn’t obtained, the loop breaks.
+        if i_sub<2:
+            break
+        # Update the point and prev_point variables and get the direction of the last step
+        stream_status_1 = stream_status[0]
+        if i>1:
+            copy_point(&streamline[i-1,0], point)
+            copy_point(&streamline[i-2,0], prev_point)
             for j in range(3):
-                # step forward
-                point[j] += direction[j] / voxel_size[j] * step_size
-
-            copy_point(point, &streamline[i, 0])
-            copy_point(&direction[0], &directions[i, 0])
-            stream_status[0] = sc.check_point_c(point)
-            i += 1
+                direction_calc[j] = point[j] - prev_point[j]
+        normalize(&direction_calc[0])
+        sub_streamline = streamline[i-1:, :]
+        # Update streamline with generate_streamline
+        i_sub, stream_status_1 = dg.generate_streamline(point, direction_calc, input_voxel_size, step_size, sc, sub_streamline, stream_status_1, True)
+        stream_status[0] = stream_status_1
+        i += i_sub-1  
+        copy_point(&streamline[i-1,0], point)
+        # update max_wm_pve
+        for j in range(i_sub):
+            pve_j = (1.0 - sc.get_include_c(&sub_streamline[j, 0]) - sc.get_exclude_c(&sub_streamline[j, 0]))
+            if pve_j > max_wm_pve:
+                max_wm_pve = pve_j
 
         current_wm_pve = 1.0 - sc.get_include(point) - sc.get_exclude(point)
         if current_wm_pve > max_wm_pve:
             max_wm_pve = current_wm_pve
 
-        if stream_status[0] == TRACKPOINT:
-            # The tracking continues normally
-            continue
-        elif (stream_status[0] == ENDPOINT
+        if (stream_status[0] == ENDPOINT
               and max_wm_pve < min_wm_pve_before_stopping
               and current_wm_pve > 0):
             # The tracking stopped before reaching the wm
             continue
-        elif stream_status[0] == INVALIDPOINT:
+        elif stream_status[0] == INVALIDPOINT or stream_status[0] == TRACKPOINT:
             if pft_trial < pft_max_trials and i > 1 and i < strl_array_len:
                 back_steps = min(i - 1, pft_max_nbr_back_steps)
                 front_steps = min(strl_array_len - i - back_steps - 1,
                                   pft_max_nbr_front_steps)
                 front_steps = max(0, front_steps)
-                i = _pft(streamline, i - back_steps, directions, dg, sc,
+                i = _pft(streamline, i - back_steps, dg, sc,
                          voxel_size, step_size, stream_status,
                          back_steps + front_steps, particle_count,
-                         particle_paths, particle_dirs, particle_weights,
+                         particle_paths, particle_weights,
                          particle_steps, particle_stream_statuses)
                 pft_trial += 1
                 # update the current point with the PFT results
                 copy_point(&streamline[i-1, 0], point)
-                copy_point(&directions[i-1, 0], &direction[0])
+                # copy_point(&directions[i-1, 0], &direction[0])
 
                 # update max_wm_pve following pft
                 for j in range(i):
@@ -291,7 +295,6 @@ cdef _pft_tracker(DirectionGetter dg,
 @cython.cdivision(True)
 cdef _pft(cnp.float_t[:, :] streamline,
           int streamline_i,
-          cnp.float_t[:, :] directions,
           DirectionGetter dg,
           AnatomicalStoppingCriterion sc,
           double* voxel_size,
@@ -300,7 +303,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
           int pft_nbr_steps,
           int particle_count,
           cnp.float_t[:, :, :, :] particle_paths,
-          cnp.float_t[:, :, :, :] particle_dirs,
           cnp.float_t[:] particle_weights,
           cnp.npy_intp[:, :] particle_steps,
           cnp.npy_intp[:, :] particle_stream_statuses):
@@ -311,12 +313,19 @@ cdef _pft(cnp.float_t[:, :] streamline,
         double eps = 1e-16
         cnp.npy_intp s, p, j
 
+        double prev_point[3]
+
     if pft_nbr_steps <= 0:
         return streamline_i
 
+    # Set the point and prev_point variables and get the direction of the last step
+    copy_point(&streamline[streamline_i, 0], point)
+    copy_point(&streamline[streamline_i-1, 0], prev_point)
+    for j in range(3):
+        dir[j] = (point[j] - prev_point[j])
+
     for p in range(particle_count):
         copy_point(&streamline[streamline_i, 0], &particle_paths[0, p, 0, 0])
-        copy_point(&directions[streamline_i, 0], &particle_dirs[0, p, 0, 0])
         particle_weights[p] = 1. / particle_count
         particle_stream_statuses[0, p] = TRACKPOINT
         particle_steps[0, p] = 0
@@ -326,10 +335,13 @@ cdef _pft(cnp.float_t[:, :] streamline,
             if particle_stream_statuses[0, p] != TRACKPOINT:
                 for j in range(3):
                     particle_paths[0, p, s, j] = 0
-                    particle_dirs[0, p, s, j] = 0
                 continue  # move to the next particle
             copy_point(&particle_paths[0, p, s, 0], point)
-            copy_point(&particle_dirs[0, p, s, 0], dir)
+            if s>0:
+                copy_point(&particle_paths[0, p, s , 0], point)
+                copy_point(&particle_paths[0, p, s-1 , 0], prev_point)
+                for j in range(3):
+                    dir[j] = (point[j]- prev_point[j])
 
             if dg.get_direction_c(point, dir):
                 particle_stream_statuses[0, p] = INVALIDPOINT
@@ -340,7 +352,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     point[j] += dir[j] / voxel_size[j] * step_size
 
                 copy_point(point, &particle_paths[0, p, s + 1, 0])
-                copy_point(dir, &particle_dirs[0, p, s + 1, 0])
                 particle_stream_statuses[0, p] = sc.check_point_c(point)
                 particle_steps[0, p] = s + 1
                 particle_weights[p] *= 1 - sc.get_exclude_c(point)
@@ -370,8 +381,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     for ss in range(pft_nbr_steps):
                         copy_point(&particle_paths[0, pp, ss, 0],
                                   &particle_paths[1, pp, ss, 0])
-                        copy_point(&particle_dirs[0, pp, ss, 0],
-                                  &particle_dirs[1, pp, ss, 0])
                     particle_stream_statuses[1, pp] = \
                             particle_stream_statuses[0, pp]
                     particle_steps[1, pp] = particle_steps[0, pp]
@@ -388,8 +397,6 @@ cdef _pft(cnp.float_t[:, :] streamline,
                     for ss in range(pft_nbr_steps):
                         copy_point(&particle_paths[1, p_source, ss, 0],
                                   &particle_paths[0, pp, ss, 0])
-                        copy_point(&particle_dirs[1, p_source, ss, 0],
-                                  &particle_dirs[0, pp, ss, 0])
                     particle_stream_statuses[0, pp] = \
                             particle_stream_statuses[1, p_source]
                     particle_steps[0, pp] = particle_steps[1, p_source]
@@ -409,6 +416,5 @@ cdef _pft(cnp.float_t[:, :] streamline,
     for s in range(1, particle_steps[0, p]):
         copy_point(&particle_paths[0, p, s, 0],
                    &streamline[streamline_i + s, 0])
-        copy_point(&particle_dirs[0, p, s, 0], &directions[streamline_i + s, 0])
     stream_status[0] = <StreamlineStatus> particle_stream_statuses[0, p]
     return streamline_i + particle_steps[0, p]
